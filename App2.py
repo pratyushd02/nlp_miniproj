@@ -16,8 +16,8 @@ import pandas as pd
 import streamlit as st
 import nltk
 import spacy
-import torch
 from transformers import BertTokenizer, BertForSequenceClassification
+import torch
 nltk.download('stopwords')
 spacy.load('en_core_web_sm')
 
@@ -30,7 +30,6 @@ def get_table_download_link(df, filename, text):
     csv = df.to_csv(index=False)
     # some strings <-> bytes conversions necessary here
     b64 = base64.b64encode(csv.encode()).decode()
-    # href = f'<a href="data:file/csv;base64,{b64}">Download Report</a>'
     href = f'<a href="data:file/csv;base64,{b64}" download="{filename}">{text}</a>'
     return href
 
@@ -40,13 +39,22 @@ def analyze_sentiment(text):
     tokenizer = BertTokenizer.from_pretrained(model_name)
     model = BertForSequenceClassification.from_pretrained(model_name)
 
-    input_ids = tokenizer(text, return_tensors="pt",
-                          padding=True, truncation=True)["input_ids"]
+    # Tokenize the text
+    inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True)
+
+    # Make a prediction using the model
     with torch.no_grad():
-        outputs = model(input_ids)
+        outputs = model(**inputs)
         logits = outputs.logits
-    sentiment = "Positive" if logits.argmax() == 1 else "Negative"
-    return sentiment
+
+    # Map the output to sentiment labels
+    sentiment_labels = ["Negative", "Positive"]
+    sentiment_scores = torch.softmax(logits, dim=1).tolist()[0]
+
+    sentiment_label = sentiment_labels[torch.argmax(logits, dim=1)]
+
+    return sentiment_label, sentiment_scores
+
 
 
 def pdf_reader(file):
@@ -77,12 +85,12 @@ def show_pdf(file_path):
 
 
 st.set_page_config(
-    page_title="Smart Resume Analyzer"
+    page_title="Resume Analyzer"
 )
 
 
 def run():
-    st.title("Smart Resume Analyser")
+    st.title("Resume Analyser")
 
     pdf_file = st.file_uploader("Choose your Resume", type=["pdf"])
     if pdf_file is not None:
@@ -107,9 +115,26 @@ def run():
                 st.text('Resume pages: ' + str(resume_data['no_of_pages']))
             except:
                 pass
-            sentiment = analyze_sentiment(resume_text)
-            st.success("Sentiment Analysis: " + sentiment)
+            #sentiment analysis
+            sentiment_label, sentiment_scores = analyze_sentiment(resume_text)
+     
+            st.subheader("**Sentiment Analysis**")
+            st.text("Sentiment Label: " + sentiment_label)
+            st.text("Sentiment Scores:")
+            print(sentiment_scores)
+            st.text("Negative: " + str(sentiment_scores[0]))
+            st.text("Positive: " + str(sentiment_scores[1]))
+            if len(sentiment_scores) > 2:  # Check if sentiment_scores has more than 2 elements
+                st.text("Neutral: " + str(sentiment_scores[2]))
 
+
+            if sentiment_label == "Negative":
+                st.error("The sentiment of your resume is negative.")
+            elif sentiment_label == "Neutral":
+                st.info("The sentiment of your resume is neutral.")
+            elif sentiment_label == "Positive":
+                st.success("The sentiment of your resume is positive.")
+            
             cand_level = ''
             if resume_data['no_of_pages'] == 1:
                 cand_level = "Fresher"
